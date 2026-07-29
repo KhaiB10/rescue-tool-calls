@@ -1,0 +1,39 @@
+{
+  "name": "rescue-tool-calls",
+  "version": "1.0.0",
+  "description": "Recover tool calls that a local or cheap LLM wrote as plain text instead of using the tool-calling API. Zero dependencies.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "llm",
+    "tool-calling",
+    "function-calling",
+    "ollama",
+    "local-llm",
+    "llama",
+    "mistral",
+    "agents",
+    "ai",
+    "openai"
+  ],
+  "author": "Khai Bustos",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KhaiB10/rescue-tool-calls.git"
+  }
+}
