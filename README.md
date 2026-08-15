@@ -77,6 +77,48 @@ parseToolCalls(text, toolNames, { all: true }); // return every call found, not 
 parseToolCalls(text);                            // no tool list: accept any plausible call
 ```
 
+## Pass your tool definitions, not `t => t.name`
+
+You can hand the tool list over in whatever shape you already keep it:
+
+```js
+parseToolCalls(text, ['search']);                                        // strings
+parseToolCalls(text, [{ name: 'search', input_schema: {...} }]);         // Anthropic / native
+parseToolCalls(text, [{ type: 'function', function: { name: 'search' } }]); // OpenAI / Ollama
+```
+
+**This exists because of a real bug.** A caller mapped an OpenAI-shaped tool list with
+`tools.map(t => t.name)` — but there the name lives at `t.function.name`, so every entry
+became `undefined`. The allow-list then matched nothing, a perfectly valid rescued call was
+thrown away, and the user was told the model's reply "came out malformed". Nothing logged a
+problem, because from the library's side the caller had simply allowed no tools.
+
+So now: if you pass a **non-empty** tool list and no name can be read from any entry, that is
+treated as a caller mistake rather than a policy. The library warns, and does not filter:
+
+```js
+parseToolCalls(text, brokenList, { onWarn: (msg) => log.warn(msg) });
+```
+
+An **explicitly empty** array (`[]`) still means "allow nothing" and is respected.
+
+## Debugging a misbehaving agent
+
+`inspectToolCalls` tells you *why* nothing ran — because these look identical from the outside
+and are completely different bugs:
+
+```js
+import { inspectToolCalls } from 'rescue-tool-calls';
+
+inspectToolCalls('{"name":"browse_web","arguments":{}}', ['web_search']);
+// -> { calls: [], rejected: ['browse_web'], sawToolLikeText: true }
+//    the model invented a tool you never offered (stale list, or hallucinated name)
+
+inspectToolCalls('I think the answer is 42.', ['web_search']);
+// -> { calls: [], rejected: [], sawToolLikeText: false }
+//    the model just answered in prose — nothing to rescue
+```
+
 ## What it handles
 
 - ✅ Plain JSON printed in the reply: `{"name":..., "parameters":...}`
@@ -87,6 +129,8 @@ parseToolCalls(text);                            // no tool list: accept any pla
 - ✅ XML-ish `<tool_call>name<arg_key>..<arg_value>..`
 - ✅ Key aliases: `name`/`function.name`/`tool`, `parameters`/`arguments`/`input`/`args`
 - ✅ Ignores calls to tools you didn't offer (no false positives)
+- ✅ Tool lists in **any** shape: strings, `{name}`, or OpenAI `{function:{name}}`
+- ✅ Warns instead of silently rejecting when the tool list can't be read
 
 ## Why trust it
 

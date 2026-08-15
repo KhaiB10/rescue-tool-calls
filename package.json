@@ -1,6 +1,6 @@
 {
   "name": "rescue-tool-calls",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Recover tool calls that a local or cheap LLM wrote as plain text instead of using the tool-calling API. Zero dependencies.",
   "type": "module",
   "main": "src/index.js",
