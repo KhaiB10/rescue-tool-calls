@@ -138,7 +138,7 @@ inspectToolCalls('I think the answer is 42.', ['web_search']);
 
 When Ollama silently truncates a long agent prompt (its default context is 4k tokens on GPUs under
 23 GiB), local models stop making structured tool calls and write them as text instead. In a
-pre-registered benchmark (OpenCode's real system prompt and tools, 648 trials on a Tesla P40),
+pre-registered benchmark ([tool-call-truncation-bench](https://github.com/KhaiB10/tool-call-truncation-bench): OpenCode's real system prompt and tools, 648 trials on a Tesla P40),
 108 replies were text-format tool calls:
 
 | model | text-format calls | recovered by 1.1.0 | recovered by 1.2.0 |
