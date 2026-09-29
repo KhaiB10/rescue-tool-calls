@@ -172,3 +172,59 @@ test('inspect distinguishes prose from a rejected call', () => {
   assert.equal(r.sawToolLikeText, false);
   assert.deepEqual(r.rejected, []);
 });
+
+// ── <function=NAME><parameter=KEY> — Qwen3-Coder, Qwen 3.5+, Granite 4.2 ─────
+test('Granite 4.2 / Qwen3-Coder <function=> format (mellea #1689 example)', () => {
+  const text = '<tool_call>\n<function=get_weather>\n<parameter=city>\nBoston\n</parameter>\n</function>\n</tool_call>';
+  assert.deepEqual(parseToolCalls(text, TOOLS), [{ id: 'rtc_0', name: 'get_weather', input: { city: 'Boston' } }]);
+});
+
+test('<function=> values: JSON literals decode, everything else stays a string', () => {
+  const text = '<function=read>\n<parameter=filePath>\n/Users/ai/app/index.js\n</parameter>\n'
+    + '<parameter=limit>\n15\n</parameter>\n<parameter=offset>\n2969\n</parameter>\n'
+    + '<parameter=id>\n007\n</parameter>\n<parameter=opts>\n{"deep": true}\n</parameter>\n</function>';
+  const [call] = parseToolCalls(text, ['read']);
+  assert.deepEqual(call.input, { filePath: '/Users/ai/app/index.js', limit: 15, offset: 2969, id: '007', opts: { deep: true } });
+});
+
+test('<function=> multi-line values keep their inner newlines', () => {
+  const text = '<function=send_email>\n<parameter=body>\nHi,\n\nSee you Monday.\n</parameter>\n</function>';
+  assert.equal(parseToolCalls(text, TOOLS)[0].input.body, 'Hi,\n\nSee you Monday.');
+});
+
+test('<function=> reply cut off mid-call still yields the call', () => {
+  const text = "I'll look that up.\n<function=search>\n<parameter=q>\nollama context length";
+  assert.deepEqual(parseToolCalls(text, TOOLS)[0], { id: 'rtc_0', name: 'search', input: { q: 'ollama context length' } });
+});
+
+test('<function=> respects the allow-list and returns every call with all:true', () => {
+  const text = '<function=rm_rf><parameter=path>/</parameter></function>'
+    + '<function=search><parameter=q>a</parameter></function><function=get_weather><parameter=city>Oslo</parameter></function>';
+  assert.deepEqual(parseToolCalls(text, TOOLS, { all: true }).map(c => c.name), ['search', 'get_weather']);
+  assert.deepEqual(inspectToolCalls(text, TOOLS).rejected, ['rm_rf']);
+});
+
+test('<function=> in prose that only mentions the syntax is not a call to an unoffered tool', () => {
+  assert.deepEqual(parseToolCalls('Qwen writes calls like <function=NAME> blocks.', TOOLS), []);
+});
+
+// ── Mistral [TOOL_CALLS]NAME{…} and its drifted forms ───────────────────────
+test('Mistral v11 [TOOL_CALLS]NAME[ARGS]{...}', () => {
+  const [c] = parseToolCalls('[TOOL_CALLS]get_weather[ARGS]{"city": "Lyon"}', TOOLS);
+  assert.deepEqual(c, { id: 'rtc_0', name: 'get_weather', input: { city: 'Lyon' } });
+});
+
+test('Mistral drift seen under a truncated prompt: NAME{…}, NAME: {…}, NAME,{…}, NAME\\n{…}', () => {
+  for (const t of ['[TOOL_CALLS]search{"q":"x"}', '[TOOL_CALLS]search: {"q":"x"}', '[TOOL_CALLS]search,{"q":"x"}', '[TOOL_CALLS]search\n{"q":"x"}\n```']) {
+    assert.deepEqual(parseToolCalls(t, TOOLS)[0]?.input, { q: 'x' }, t);
+  }
+});
+
+test('Mistral with prose instead of JSON arguments is NOT turned into a call', () => {
+  assert.deepEqual(parseToolCalls('[TOOL_CALLS]search: cats and dogs', TOOLS), []);
+  assert.deepEqual(parseToolCalls('[TOOL_CALLS]send_email --to="a@b.c"', TOOLS), []);
+});
+
+test('Mistral [TOOL_CALLS] to a tool that was not offered is rejected', () => {
+  assert.deepEqual(parseToolCalls('[TOOL_CALLS]rm_rf{"path":"/"}', TOOLS), []);
+});

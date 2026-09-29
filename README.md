@@ -127,10 +127,27 @@ inspectToolCalls('I think the answer is 42.', ['web_search']);
 - ✅ `arguments` given as a JSON *string* (auto-parsed)
 - ✅ Mistral-style `[TOOL_CALLS][ ... ]` arrays
 - ✅ XML-ish `<tool_call>name<arg_key>..<arg_value>..`
+- ✅ **Qwen3-Coder / Qwen 3.5+ / Granite 4.2** `<function=name><parameter=key>value</parameter></function>`, including replies cut off mid-call; numbers, booleans and JSON values are decoded, everything else stays a string
+- ✅ **Mistral v11** `[TOOL_CALLS]name[ARGS]{...}` and the drifted forms (`name{...}`, `name: {...}`, `name,{...}`) — only when the arguments are real JSON, so prose is never turned into a call
 - ✅ Key aliases: `name`/`function.name`/`tool`, `parameters`/`arguments`/`input`/`args`
 - ✅ Ignores calls to tools you didn't offer (no false positives)
 - ✅ Tool lists in **any** shape: strings, `{name}`, or OpenAI `{function:{name}}`
 - ✅ Warns instead of silently rejecting when the tool list can't be read
+
+## Measured on real failures
+
+When Ollama silently truncates a long agent prompt (its default context is 4k tokens on GPUs under
+23 GiB), local models stop making structured tool calls and write them as text instead. In a
+pre-registered benchmark (OpenCode's real system prompt and tools, 648 trials on a Tesla P40),
+108 replies were text-format tool calls:
+
+| model | text-format calls | recovered by 1.1.0 | recovered by 1.2.0 |
+|---|---|---|---|
+| qwen3-coder:30b | 57 | 0 | **57** |
+| Mistral-Small-24B | 51 | 22 | **41** |
+
+The 10 still missed are prose (`bash: sha256sum x`) and are left alone on purpose. Note: the two new
+formats were added after seeing this data, so these are in-sample numbers.
 
 ## Why trust it
 

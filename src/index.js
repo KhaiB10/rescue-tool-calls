@@ -2,8 +2,9 @@
 // instead of using the structured tool-calling API.
 //
 // Local models (Ollama, llama.cpp) and some cheap cloud models frequently do this:
-// they print  {"name":"get_weather","parameters":{"city":"Paris"}}  or
-// <tool_call>get_weather<arg_key>city</arg_key><arg_value>Paris</arg_value>  as the
+// they print  {"name":"get_weather","parameters":{"city":"Paris"}},
+// <tool_call>get_weather<arg_key>city</arg_key><arg_value>Paris</arg_value>  or
+// <function=get_weather><parameter=city>Paris</parameter></function>  as the
 // message content. Your agent then never runs the tool and the user just sees a blob.
 // This library salvages those calls so your agent keeps working across any model.
 //
@@ -142,6 +143,24 @@ export function parseToolCalls(text, toolNames, options = {}) {
     if (found.length && !all) break; // first call wins unless caller wants them all
   }
 
+  // 1b) Mistral:  [TOOL_CALLS]NAME[ARGS]{...}  — the v11+ tokenizer format — and the
+  //     drifted forms a weakened prompt produces: NAME{...}, NAME: {...}, NAME,{...},
+  //     NAME\n{...}. The arguments must be real JSON; prose after the name
+  //     ("bash: sha256sum x") is left alone, because guessing arguments out of prose
+  //     is inventing a tool call, not rescuing one.
+  if (!found.length && text.includes('[TOOL_CALLS]')) {
+    for (const mm of text.matchAll(/\[TOOL_CALLS\]\s*([a-zA-Z_][\w.-]*)\s*(?:\[ARGS\]|[:,])?\s*(?=\{)/g)) {
+      const nm = mm[1];
+      if (names && !names.has(nm)) continue;
+      const frag = extractJsonFragments(text.slice(mm.index + mm[0].length))[0];
+      let args;
+      try { args = JSON.parse(frag); } catch { continue; }
+      if (!args || typeof args !== 'object' || Array.isArray(args)) continue;
+      found.push({ id: `rtc_${found.length}`, name: nm, input: args });
+      if (!all) break;
+    }
+  }
+
   // 2) XML-ish style:  <tool_call>NAME<arg_key>k</arg_key><arg_value>v</arg_value>...
   if (!found.length && text.includes('<tool_call>')) {
     const tc = text.split('<tool_call>')[1] || '';
@@ -157,7 +176,41 @@ export function parseToolCalls(text, toolNames, options = {}) {
     }
   }
 
+  // 3) Qwen3-Coder / Qwen 3.5+ / Granite 4.2 style:
+  //      <function=NAME><parameter=KEY>VALUE</parameter>...</function>
+  //    Measured 2026-09-28: 57 of 57 text-format calls from qwen3-coder:30b under a
+  //    truncated prompt were in this shape, and none were recovered before this
+  //    branch existed. The closing tags are optional: a reply cut off by the
+  //    output limit still yields the call it was writing.
+  if (!found.length && /<function=/.test(text)) {
+    for (const fm of text.matchAll(/<function=\s*([a-zA-Z_][\w.-]*)\s*>([\s\S]*?)(?=<\/function>|<function=|$)/g)) {
+      const nm = fm[1];
+      if (names && !names.has(nm)) continue;
+      const input = {};
+      for (const pm of fm[2].matchAll(/<parameter=\s*([^>\s]+)\s*>([\s\S]*?)(?=<\/parameter>|<parameter=|$)/g)) {
+        input[pm[1]] = decodeParameterValue(pm[2]);
+      }
+      found.push({ id: `rtc_${found.length}`, name: nm, input });
+      if (!all) break;
+    }
+  }
+
   return all ? found : found.slice(0, 1);
+}
+
+/**
+ * A <parameter=…> value arrives as raw text, framed by the template's newlines.
+ * Strip exactly that framing, then decode only what is unambiguous JSON:
+ * numbers, booleans, null, objects and arrays. Anything else stays a string —
+ * so '007' and 'Boston' are untouched, while '15' becomes 15 for a `limit`.
+ */
+function decodeParameterValue(raw) {
+  const v = raw.replace(/^\r?\n/, '').replace(/\r?\n\s*$/, '');
+  const t = v.trim();
+  if (/^(-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?|true|false|null)$/.test(t) || /^[[{]/.test(t)) {
+    try { return JSON.parse(t); } catch { /* not JSON after all: keep the text */ }
+  }
+  return v;
 }
 
 /**
