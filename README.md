@@ -146,8 +146,17 @@ pre-registered benchmark (OpenCode's real system prompt and tools, 648 trials on
 | qwen3-coder:30b | 57 | 0 | **57** |
 | Mistral-Small-24B | 51 | 22 | **41** |
 
-The 10 still missed are prose (`bash: sha256sum x`) and are left alone on purpose. Note: the two new
-formats were added after seeing this data, so these are in-sample numbers.
+The 10 still missed are prose (`bash: sha256sum x`) and are left alone on purpose. The two new formats
+were added after seeing that data, so it was then re-tested, pre-registered, on **fresh** replies:
+
+| model | text-format calls | recovered by 1.2.0 (out of sample) |
+|---|---|---|
+| qwen3-coder:30b | 47 | **47 (100%)** |
+| Mistral-Small-24B | 62 | **50 (81%)** |
+
+**89% overall, and zero false positives** — it never produced a call from text that contained none.
+Mistral's misses are command-line-style arguments (`read_sensor --sensor_id=T-7`), which it declines
+rather than guesses.
 
 ## Why trust it
 
